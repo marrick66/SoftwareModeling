@@ -31,6 +31,10 @@ define
 
 end define;
 
+macro append_log(item, opr, e_state) begin
+    log := Append(log, [ data |-> item, op |-> opr, state |-> e_state ]);
+end macro;
+
 \* Using two concurrent processes:
 fair process Log \in 1..2
     variables
@@ -40,7 +44,7 @@ begin
     \* another add isn't in progress, and then writes a dirty record to the log.
     StartAdd:
         if current_item \notin user.data /\ LastEntryStateIs(log, current_item, "Committed") then
-            log := Append(log, [ data |-> current_item, op |-> "Add", state |-> "Dirty"]);
+            append_log(current_item, "Add", "Dirty");
         end if;
 
     \* CommitAdd checks to see if the current item isn't already in the user's data,
@@ -48,7 +52,7 @@ begin
     \* log and updates the user's data with the item. 
     CommitAdd:
         if current_item \notin user.data /\ LastEntryStateIs(log, current_item, "Dirty") then
-            log := Append(log, [ data |-> current_item, op |-> "Add", state |-> "Committed"]);
+            append_log(current_item, "Add", "Committed");
             user := [data |-> user.data \union {current_item}];
         end if;
 end process;
@@ -91,7 +95,7 @@ Init == (* Global variables *)
 
 StartAdd(self) == /\ pc[self] = "StartAdd"
                   /\ IF current_item[self] \notin user.data /\ LastEntryStateIs(log, current_item[self], "Committed")
-                        THEN /\ log' = Append(log, [ data |-> current_item[self], op |-> "Add", state |-> "Dirty"])
+                        THEN /\ log' = Append(log, [ data |-> current_item[self], op |-> "Add", state |-> "Dirty" ])
                         ELSE /\ TRUE
                              /\ log' = log
                   /\ pc' = [pc EXCEPT ![self] = "CommitAdd"]
@@ -99,7 +103,7 @@ StartAdd(self) == /\ pc[self] = "StartAdd"
 
 CommitAdd(self) == /\ pc[self] = "CommitAdd"
                    /\ IF current_item[self] \notin user.data /\ LastEntryStateIs(log, current_item[self], "Dirty")
-                         THEN /\ log' = Append(log, [ data |-> current_item[self], op |-> "Add", state |-> "Committed"])
+                         THEN /\ log' = Append(log, [ data |-> current_item[self], op |-> "Add", state |-> "Committed" ])
                               /\ user' = [data |-> user.data \union {current_item[self]}]
                          ELSE /\ TRUE
                               /\ UNCHANGED << user, log >>
@@ -120,7 +124,7 @@ Spec == /\ Init /\ [][Next]_vars
 
 Termination == <>(\A self \in ProcSet: pc[self] = "Done")
 
-\* END TRANSLATION - the hash of the generated TLA code (remove to silence divergence warnings): TLA-603a6deeb0a98bf92767ae64063c4342
+\* END TRANSLATION - the hash of the generated TLA code (remove to silence divergence warnings): TLA-08c5916973a704bedb211c6fb3b663fb
 =============================================================================
 \* Modification History
 \* Last modified Wed May 27 13:38:25 CDT 2020 by Sean.Mayfield
