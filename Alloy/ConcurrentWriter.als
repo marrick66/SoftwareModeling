@@ -57,7 +57,7 @@ pred StartAdd[w: Writer, d: Data, t, t': Time] {
         no LastLogEntry[d, t]
     //Postconditions:
         //Lock acquired:
-        lock = w->t'
+        lock.t' = w
         //Log entry added:
         Entity.log.t' = d->Add->Dirty
     //Frame conditions:
@@ -72,7 +72,7 @@ pred CommitAdd[w: Writer, d: Data, t, t': Time] {
         //Data has not already been added:
         d not in Entity.items.t
         //The writer holds a lock:
-        w.lock = t
+        lock.t = w
         //The last log entry for the item is a dirty add:
         LastLogEntry[d, t] = Add->Dirty
     //Postconditions:
@@ -100,6 +100,7 @@ fun LastLogEntry[d: Data, t: Time]: LogOperation->LogEntryState {
         Entity.log.lastEntryIndex[d]
 }
 
+//Initally, there should be no items in the state.
 pred Init[t: Time] {
     no log.t
     no items.t
@@ -108,14 +109,74 @@ pred Init[t: Time] {
     some Writer
 }
 
+//Definition of possible operations over time. Defined
+//as a predicate so it can be run to view instances.
 pred Trace {
     Init[first]
-    all w: Writer, i: Data, t: Time - last {
+    all t: Time - last {
+        some w: Writer, i: Data |
         let t' = t.next |
-            StartAdd[w, i, t, t'] or
+            StartAdd[w, i, t, t'] or 
             CommitAdd[w, i, t, t'] or
             Stutter[t, t']
     }
 }
 
-run Trace for 3 but 2 Writer, 10 Time
+//Prevents any stuttering if an operation can
+//be performed. This is a hack, since stuttering is a valid
+//execution state.
+fact IfPossibleMakeProgress {
+    all i: Data, t: Time |
+        let t' = t.next |
+        i not in Entity.items.t implies not Stutter[t, t']
+}
+
+//Trace set as a fact to allow checking of invariants.
+fact Execution {
+    Trace
+}
+
+//Invariant that states if a log entry exists at a
+//unit of time, it must be due to a StartAdd or CommitAdd
+//operation.
+assert NoLogWrittenExceptOnOperation {
+    all t: Time | 
+    all e: Entity.log.t |
+        let d = e.LogEntryState.LogOperation |
+        let s = e[d][Add] |
+        some w: Writer {
+            s = Dirty implies StartAdd[w, d, t.prev, t]
+            s = Committed implies CommitAdd[w, d, t.prev, t]
+        }
+}
+
+//Invariant that states that the first time items
+//have been added to the entity, there must be
+//corresponding CommitAdd and single StartAdd operations.
+assert AllDataAddedIsaResultOfOperations {
+    all t: Time |
+    let t' = t.next |
+    all i: Entity.items.t' - Entity.items.t {
+        some w:Writer |
+        one st: t'.prevs |
+        let st' = st.next {
+            StartAdd[w, i, st, st']
+            CommitAdd[w, i, t, t']
+        }
+    }
+}
+
+//This is a temporal property that isn't handled easily
+//by Alloy due to bounded checking. A finite trace can 
+//stutter until the bound. There are some methods for 
+//tracing that ensure that there is a "back loop" that
+//emulates an infinite trace by ensuring that all future
+//states equal what has already been seen.
+assert AllDataAddedEventually {
+    some t: Time | Entity.items.t = Data
+}
+
+check NoLogWrittenExceptOnOperation for 3 but 10 Time
+check AllDataAddedIsaResultOfOperations for 3 but 10 Time
+check AllDataAddedEventually for 3 but 10 Time
+run {} for 3 but 10 Time
